@@ -1,0 +1,41 @@
+# Environment
+.env
+
+# Python
+*.py[cod]
+__pycache__/
+*.so
+.Python
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Telegram
+*.session
+*.session-journal
