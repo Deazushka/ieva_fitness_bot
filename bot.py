@@ -454,7 +454,10 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     user_id = update.message.from_user.id
     text = update.message.text.strip()
     
+    logger.info(f"User {user_id} entered: {text}")
+    
     if user_id not in active_workouts:
+        logger.warning(f"No active workout for user {user_id}")
         await update.message.reply_text(
             get_message('no_active_workout', user_id),
             reply_markup=create_main_menu_keyboard(user_id)
@@ -463,6 +466,7 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     exercise = context.user_data.get('current_exercise')
     if not exercise:
+        logger.warning(f"No current exercise for user {user_id}")
         await update.message.reply_text(
             get_message('invalid_input', user_id),
             reply_markup=create_exercises_keyboard()
@@ -480,9 +484,10 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
             if len(parts) >= 3:
                 weight = float(parts[2])
         except (ValueError, IndexError):
-            pass
+            logger.error(f"Failed to parse input: {text}")
     
     if not sets or not reps:
+        logger.warning(f"Invalid input from user {user_id}: {text}")
         keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)]]
         await update.message.reply_text(
             "❌ Неверный формат. Введите: *подходы повторения вес*\n\nПримеры:\n• 3 12\n• 4 10 50\n• 5 5 100",
@@ -493,6 +498,7 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     workout_id = active_workouts[user_id]['workout_id']
     add_exercise_to_workout(workout_id, exercise, sets, reps, weight)
+    logger.info(f"Exercise {exercise} added to workout {workout_id}: {sets}x{reps}, weight={weight}")
     
     weight_str = f" ({weight} кг)" if weight else ""
     await update.message.reply_text(
@@ -502,6 +508,7 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     del context.user_data['current_exercise']
     
+    logger.info(f"Returning to exercise selection for user {user_id}")
     await update.message.reply_text(
         get_message('select_exercise', user_id),
         reply_markup=create_exercises_keyboard()
