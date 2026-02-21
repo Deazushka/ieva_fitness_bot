@@ -483,9 +483,11 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
             pass
     
     if not sets or not reps:
+        keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)]]
         await update.message.reply_text(
             "❌ Неверный формат. Введите: *подходы повторения вес*\n\nПримеры:\n• 3 12\n• 4 10 50\n• 5 5 100",
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return ConversationState.EXERCISE_INPUT
     
@@ -505,6 +507,24 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup=create_exercises_keyboard()
     )
     return ConversationState.EXERCISE_SELECT
+
+async def exercise_input_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data
+    
+    if data == CallbackData.BACK:
+        if 'current_exercise' in context.user_data:
+            del context.user_data['current_exercise']
+        
+        await query.edit_message_text(
+            get_message('select_exercise', user_id),
+            reply_markup=create_exercises_keyboard()
+        )
+        return ConversationState.EXERCISE_SELECT
+    
+    return ConversationState.EXERCISE_INPUT
 
 async def history_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -663,6 +683,7 @@ def main():
                 CallbackQueryHandler(exercise_select_callback),
             ],
             ConversationState.EXERCISE_INPUT: [
+                CallbackQueryHandler(exercise_input_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, exercise_input_handler),
             ],
             ConversationState.ADD_CATEGORY_NAME: [
