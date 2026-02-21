@@ -80,8 +80,7 @@ MESSAGES = {
                           "• 3x12\n" \
                           "• 4x10,50\n" \
                           "• 5x5x100",
-        'exercise_added': "✅ Упражнение добавлено: *{exercise}*\n" \
-                         "Подходы: {sets}x{reps}" + (" ({weight} кг)" if weight else ""),
+        'exercise_added': "✅ Упражнение добавлено: *{exercise}*\nПодходы: {sets}x{reps}{weight}",
         'invalid_input': "❌ Неверный формат ввода. Попробуйте снова.\n\n" \
                         "*Примеры:*\n• 3x12\n• 4x10,50",
         'workout_finished': "🎉 *Тренировка завершена!*\n\n" \
@@ -117,8 +116,8 @@ MESSAGES = {
         'units_imperial': "Имперские (фунты) ⚖️",
         'notifications_on': "Включены 🔔",
         'notifications_off': "Выключены 🔕",
-        'current_language': "Русский" if 'ru' else "English",
-        'current_units': "Метрические (кг)" if 'metric' else "Имперские (фунты)",
+        'current_language': "Русский",
+        'current_units': "Метрические (кг)",
     },
     'en': {
         'start': "🏋️ Welcome to Fitness Tracker Bot!\n\nChoose an action:",
@@ -143,8 +142,7 @@ MESSAGES = {
                           "• 3x12\n" \
                           "• 4x10,50\n" \
                           "• 5x5x100",
-        'exercise_added': "✅ Exercise added: *{exercise}*\n" \
-                           "Sets: {sets}x{reps}" + (" ({weight} kg)" if weight else ""),
+        'exercise_added': "✅ Exercise added: *{exercise}*\nSets: {sets}x{reps}{weight}",
         'invalid_input': "❌ Invalid format. Try again.\n\n" \
                         "*Examples:*\n• 3x12\n• 4x10,50",
         'workout_finished': "🎉 *Workout Completed!*\n\n" \
@@ -181,6 +179,6 @@ MESSAGES = {
         'notifications_on': "Enabled 🔔",
         'notifications_off': "Disabled 🔕",
         'current_language': "English",
-        'current_units': "Metric (kg)" if 'metric' else "Imperial (lbs)",
+        'current_units': "Metric (kg)",
     }
 }
