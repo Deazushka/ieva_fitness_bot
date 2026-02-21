@@ -1,6 +1,9 @@
 import re
 import logging
+import os
 from datetime import datetime
+from threading import Thread
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -21,6 +24,20 @@ from database import (
 from constants import ConversationState, CallbackData, MESSAGES
 
 active_workouts = {}
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🏋️ Fitness Tracker Bot is running!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask():
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
 
 def get_user_language(user_id: int) -> str:
     try:
@@ -60,8 +77,23 @@ def create_categories_keyboard() -> InlineKeyboardMarkup:
     
     keyboard.append([
         InlineKeyboardButton("➕ Добавить", callback_data=CallbackData.ADD_CATEGORY),
+        InlineKeyboardButton("🗑️ Удалить", callback_data=CallbackData.DELETE_CATEGORY),
+    ])
+    keyboard.append([
         InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK),
     ])
+    return InlineKeyboardMarkup(keyboard)
+
+def create_delete_categories_keyboard() -> InlineKeyboardMarkup:
+    categories = get_categories()
+    keyboard = []
+    row = []
+    for i, (cat_id, cat_name) in enumerate(categories):
+        row.append(InlineKeyboardButton(f"🗑️ {cat_name}", callback_data=f"del_cat_{cat_name}"))
+        if len(row) == 2 or i == len(categories) - 1:
+            keyboard.append(row)
+            row = []
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)])
     return InlineKeyboardMarkup(keyboard)
 
 def create_exercises_keyboard() -> InlineKeyboardMarkup:
@@ -76,11 +108,24 @@ def create_exercises_keyboard() -> InlineKeyboardMarkup:
     
     keyboard.append([
         InlineKeyboardButton("➕ Добавить", callback_data=CallbackData.ADD_EXERCISE),
+        InlineKeyboardButton("🗑️ Удалить", callback_data=CallbackData.DELETE_EXERCISE),
     ])
     keyboard.append([
         InlineKeyboardButton("✅ Завершить", callback_data=CallbackData.FINISH_WORKOUT),
         InlineKeyboardButton("❌ Отмена", callback_data=CallbackData.CANCEL_WORKOUT),
     ])
+    return InlineKeyboardMarkup(keyboard)
+
+def create_delete_exercises_keyboard() -> InlineKeyboardMarkup:
+    exercises = get_exercises()
+    keyboard = []
+    row = []
+    for i, (ex_id, ex_name, cat_id) in enumerate(exercises):
+        row.append(InlineKeyboardButton(f"🗑️ {ex_name}", callback_data=f"del_ex_{ex_name}"))
+        if len(row) == 2 or i == len(exercises) - 1:
+            keyboard.append(row)
+            row = []
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)])
     return InlineKeyboardMarkup(keyboard)
 
 def create_history_keyboard(workouts: list, page: int = 0, per_page: int = 5) -> InlineKeyboardMarkup:
@@ -268,6 +313,25 @@ async def category_select_callback(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text(get_message('enter_category_name', user_id))
         return ConversationState.ADD_CATEGORY_NAME
     
+    elif data == CallbackData.DELETE_CATEGORY:
+        await query.edit_message_text(
+            "🗑️ Выберите категорию для удаления:",
+            reply_markup=create_delete_categories_keyboard()
+        )
+        return ConversationState.CATEGORY_SELECT
+    
+    elif data.startswith("del_cat_"):
+        category_name = data[8:]
+        if delete_category(category_name):
+            await query.answer(f"✅ Категория '{category_name}' удалена")
+            await query.edit_message_text(
+                get_message('select_category', user_id),
+                reply_markup=create_categories_keyboard()
+            )
+        else:
+            await query.answer(f"❌ Не удалось удалить '{category_name}'")
+        return ConversationState.CATEGORY_SELECT
+    
     elif data.startswith(CallbackData.CATEGORY_PREFIX):
         category = data[len(CallbackData.CATEGORY_PREFIX):]
         username = query.from_user.username or query.from_user.first_name
@@ -309,6 +373,25 @@ async def exercise_select_callback(update: Update, context: ContextTypes.DEFAULT
     if data == CallbackData.ADD_EXERCISE:
         await query.edit_message_text(get_message('enter_exercise_name', user_id))
         return ConversationState.ADD_EXERCISE_NAME
+    
+    elif data == CallbackData.DELETE_EXERCISE:
+        await query.edit_message_text(
+            "🗑️ Выберите упражнение для удаления:",
+            reply_markup=create_delete_exercises_keyboard()
+        )
+        return ConversationState.EXERCISE_SELECT
+    
+    elif data.startswith("del_ex_"):
+        exercise_name = data[7:]
+        if delete_exercise(exercise_name):
+            await query.answer(f"✅ Упражнение '{exercise_name}' удалено")
+            await query.edit_message_text(
+                get_message('select_exercise', user_id),
+                reply_markup=create_exercises_keyboard()
+            )
+        else:
+            await query.answer(f"❌ Не удалось удалить '{exercise_name}'")
+        return ConversationState.EXERCISE_SELECT
     
     elif data == CallbackData.FINISH_WORKOUT:
         if user_id not in active_workouts:
@@ -386,26 +469,22 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
         return ConversationState.EXERCISE_SELECT
     
-    patterns = [
-        r'^(\d+)\s*x\s*(\d+)(?:,(\d+(?:\.\d+)?))?$',
-        r'^(\d+)\s*x\s*(\d+)\s*x\s*(\d+(?:\.\d+)?)$',
-    ]
-    
     sets, reps, weight = None, None, None
     
-    for pattern in patterns:
-        match = re.match(pattern, text)
-        if match:
-            groups = match.groups()
-            if len(groups) == 2:
-                sets, reps = int(groups[0]), groups[1]
-            elif len(groups) == 3:
-                sets, reps, weight = int(groups[0]), groups[1], float(groups[2])
-            break
+    parts = text.split()
     
-    if not sets:
+    if len(parts) >= 2:
+        try:
+            sets = int(parts[0])
+            reps = parts[1]
+            if len(parts) >= 3:
+                weight = float(parts[2])
+        except (ValueError, IndexError):
+            pass
+    
+    if not sets or not reps:
         await update.message.reply_text(
-            get_message('invalid_input', user_id),
+            "❌ Неверный формат. Введите: *подходы повторения вес*\n\nПримеры:\n• 3 12\n• 4 10 50\n• 5 5 100",
             parse_mode='Markdown'
         )
         return ConversationState.EXERCISE_INPUT
@@ -567,6 +646,8 @@ async def settings_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationState.SETTINGS_MENU
 
 def main():
+    Thread(target=run_flask, daemon=True).start()
+    
     application = Application.builder().token(TOKEN).build()
     
     main_conv = ConversationHandler(

@@ -69,17 +69,17 @@ MESSAGES = {
                 "3. Выберите упражнение\n" \
                 "4. Введите подходы и повторения\n\n" \
                 "*Формат ввода:*\n" \
-                "• 3x12 - 3 подхода по 12 повторений\n" \
-                "• 4x10,50 - 4x10 с весом 50 кг\n" \
-                "• 5x5x100 - 5x5 с весом 100 кг",
+                "• 3 12 - 3 подхода по 12 повторений\n" \
+                "• 4 10 50 - 4x10 с весом 50 кг\n" \
+                "• 5 5 100 - 5x5 с весом 100 кг",
         'workout_started': "✅ Тренировка начата! Категория: *{category}*",
         'select_category': "📋 Выберите категорию тренировки:",
         'select_exercise': "💪 Выберите упражнение:",
-        'enter_sets_reps': "🔢 Введите количество подходов и повторений.\n\n" \
+        'enter_sets_reps': "🔢 Введите количество подходов, повторений и вес (опционально).\n\n" \
                           "*Примеры:*\n" \
-                          "• 3x12\n" \
-                          "• 4x10,50\n" \
-                          "• 5x5x100",
+                          "• 3 12\n" \
+                          "• 4 10 50\n" \
+                          "• 5 5 100",
         'exercise_added': "✅ Упражнение добавлено: *{exercise}*\nПодходы: {sets}x{reps}{weight}",
         'invalid_input': "❌ Неверный формат ввода. Попробуйте снова.\n\n" \
                         "*Примеры:*\n• 3x12\n• 4x10,50",
@@ -132,16 +132,16 @@ MESSAGES = {
                 "3. Choose exercise\n" \
                 "4. Enter sets and reps\n\n" \
                 "*Input format:*\n" \
-                "• 3x12 - 3 sets of 12 reps\n" \
-                "• 4x10,50 - 4x10 with 50kg",
+                "• 3 12 - 3 sets of 12 reps\n" \
+                "• 4 10 50 - 4x10 with 50kg",
         'workout_started': "✅ Workout started! Category: *{category}*",
         'select_category': "📋 Select workout category:",
         'select_exercise': "💪 Select exercise:",
-        'enter_sets_reps': "🔢 Enter sets and reps.\n\n" \
+        'enter_sets_reps': "🔢 Enter sets, reps and weight (optional).\n\n" \
                           "*Examples:*\n" \
-                          "• 3x12\n" \
-                          "• 4x10,50\n" \
-                          "• 5x5x100",
+                          "• 3 12\n" \
+                          "• 4 10 50\n" \
+                          "• 5 5 100",
         'exercise_added': "✅ Exercise added: *{exercise}*\nSets: {sets}x{reps}{weight}",
         'invalid_input': "❌ Invalid format. Try again.\n\n" \
                         "*Examples:*\n• 3x12\n• 4x10,50",
