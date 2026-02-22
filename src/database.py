@@ -1,4 +1,5 @@
 import asyncpg
+import asyncpg.exceptions
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -70,7 +71,6 @@ class Database:
                     category_name TEXT,
                     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     finished_at TIMESTAMP,
-                    is_active BOOLEAN DEFAULT TRUE,
                     total_exercises INTEGER DEFAULT 0
                 );
 
@@ -93,6 +93,11 @@ class Database:
                     weight REAL
                 );
             ''')
+            
+            try:
+                await conn.execute("ALTER TABLE workouts ADD COLUMN is_active BOOLEAN DEFAULT TRUE")
+            except asyncpg.exceptions.DuplicateColumnError:
+                pass
 
     async def _init_default_data(self) -> None:
         async with self._pool.acquire() as conn:
