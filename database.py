@@ -139,9 +139,28 @@ def get_exercises():
 
 def get_exercises_by_category(category_name):
     cat_id = cursor.execute("SELECT id FROM categories WHERE name = ?", (category_name,)).fetchone()
-    if cat_id:
-        return cursor.execute("SELECT id, name FROM exercises WHERE category_id = ? ORDER BY name", (cat_id[0],)).fetchall()
-    return get_exercises()
+    
+    if category_name == "Свободная тренировка" or not cat_id:
+        return cursor.execute("""
+            SELECT id, name, category_id FROM exercises 
+            WHERE category_id IS NULL 
+            ORDER BY name
+        """).fetchall()
+    
+    category_exercises = cursor.execute("""
+        SELECT id, name, category_id FROM exercises 
+        WHERE category_id = ? 
+        ORDER BY name
+    """, (cat_id[0],)).fetchall()
+    
+    if not category_exercises:
+        return cursor.execute("""
+            SELECT id, name, category_id FROM exercises 
+            WHERE category_id IS NULL 
+            ORDER BY name
+        """).fetchall()
+    
+    return category_exercises
 
 def add_exercise(name, category_name=None):
     category_id = None
