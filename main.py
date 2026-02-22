@@ -1,100 +1,72 @@
-import asyncio
 import logging
 import os
-import threading
-from flask import Flask, request, jsonify
-from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, Response
 from telegram import Update
+from telegram.ext import ApplicationBuilder
 
-from src.bot import create_application, setup_webhook
 from src.database import Database
-
-load_dotenv()
+from src.handlers import Handlers
 
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=os.getenv('LOG_LEVEL', 'INFO')
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=os.getenv("LOG_LEVEL", "INFO"),
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN is required")
 
-db = Database()
-_ptb_app = None
-_event_loop = None
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is required")
 
-
-def run_async(coro):
-    global _event_loop
-    if _event_loop is None:
-        return None
-    future = asyncio.run_coroutine_threadsafe(coro, _event_loop)
-    return future.result(timeout=30)
+db = Database(DATABASE_URL)
 
 
-def event_loop_thread():
-    global _event_loop, _ptb_app
-    
-    _event_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_event_loop)
-    
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
-    if not token:
-        logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
-        return
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.connect()
+    logger.info("Database connected")
 
-    _event_loop.run_until_complete(db.connect())
-    logger.info('Database connected')
+    ptb = ApplicationBuilder().token(TOKEN).updater(None).build()
+    Handlers(db).register(ptb)
 
-    _ptb_app = create_application(token, db)
-    _event_loop.run_until_complete(_ptb_app.initialize())
-    _event_loop.run_until_complete(_ptb_app.start())
-    logger.info('Application initialized')
+    await ptb.initialize()
+    await ptb.start()
+    logger.info("Bot started")
 
-    render_url = os.getenv('RENDER_EXTERNAL_URL')
-    if render_url:
-        _event_loop.run_until_complete(setup_webhook(_ptb_app, token, render_url))
+    webhook_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/webhook"
+    await ptb.bot.set_webhook(webhook_url)
+    logger.info(f"Webhook set: {webhook_url}")
 
-    _event_loop.run_forever()
+    app.state.ptb = ptb
 
+    yield
 
-threading.Thread(target=event_loop_thread, daemon=True).start()
+    await ptb.stop()
+    await ptb.shutdown()
+    await db.disconnect()
+    logger.info("Shutdown complete")
 
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    if request.method == 'POST':
-        update_data = request.get_json(force=True)
-        logger.info(f'Received webhook update: {update_data}')
-        
-        if _ptb_app and _event_loop:
-            update = Update.de_json(update_data, _ptb_app.bot)
-            if update:
-                logger.info(f'Processing update: {update.update_id}')
-                try:
-                    run_async(_ptb_app.process_update(update))
-                    logger.info(f'Update {update.update_id} processed')
-                except Exception as e:
-                    logger.error(f'Error processing update: {e}')
-            else:
-                logger.warning('Failed to parse update')
-        else:
-            logger.warning('Application not initialized')
-        
-        return jsonify({'status': 'ok'})
-    return jsonify({'status': 'error'}), 400
+app = FastAPI(lifespan=lifespan)
 
 
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'healthy'})
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, app.state.ptb.bot)
+    await app.state.ptb.process_update(update)
+    return Response(status_code=200)
 
 
-@app.route('/', methods=['GET'])
-def index():
-    return jsonify({'status': 'running', 'service': 'workout-bot'})
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
 
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+@app.get("/")
+async def root():
+    return {"status": "running", "service": "workout-bot"}
