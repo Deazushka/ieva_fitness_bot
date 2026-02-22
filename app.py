@@ -59,12 +59,19 @@ init_sync()
 def webhook():
     if request.method == 'POST':
         update_data = request.get_json(force=True)
+        logger.info(f'Received webhook update: {update_data}')
         if application and loop:
             update = Update.de_json(update_data, application.bot)
-            asyncio.run_coroutine_threadsafe(
-                application.process_update(update),
-                loop
-            )
+            if update:
+                logger.info(f'Processing update: {update.update_id}')
+                asyncio.run_coroutine_threadsafe(
+                    application.process_update(update),
+                    loop
+                )
+            else:
+                logger.warning('Failed to parse update')
+        else:
+            logger.warning(f'Application not ready: app={application}, loop={loop}')
         return jsonify({'status': 'ok'})
     return jsonify({'status': 'error'}), 400
 
