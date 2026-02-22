@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from datetime import datetime
 from threading import Thread
 from typing import Optional, Dict, Any
@@ -947,7 +948,7 @@ def main():
     application.add_handler(CommandHandler("settings", lambda u, c: main_menu_callback(u, c)))
     
     logger.info("Bot started successfully")
-    application.run_polling(allowed_updates=['message', 'callback_query'])
+    asyncio.run(application.run_polling(allowed_updates=['message', 'callback_query']))
 
 if __name__ == '__main__':
     main()
