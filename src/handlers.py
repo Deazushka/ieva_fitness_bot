@@ -133,21 +133,28 @@ class Handlers:
     async def select_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = context.user_data.get("lang", "ru")
         callback_data = update.callback_query.data
+        logger.info(f"select_category called with callback_data: {callback_data}")
+        
         category_id = int(callback_data.split("_")[1])
+        logger.info(f"category_id: {category_id}")
 
         categories = await self.db.get_categories()
         category = next((c for c in categories if c["id"] == category_id), None)
         if not category:
+            logger.warning(f"Category not found for id: {category_id}")
             return State.CATEGORY_SELECT
 
         category_name = category["name_ru"] if lang == "ru" else category["name_en"]
         context.user_data["category_id"] = category_id
         context.user_data["category_name"] = category_name
+        logger.info(f"Selected category: {category_name}")
 
         user_id = context.user_data.get("user_id")
         await self.db.start_workout(user_id, category_name)
 
         exercises = await self.db.get_exercises(category_id)
+        logger.info(f"Found {len(exercises)} exercises for category {category_id}")
+        
         keyboard = exercises_keyboard(exercises, category_id, lang)
         await update.callback_query.edit_message_text(
             t("select_exercise", lang, category=category_name),
@@ -165,11 +172,15 @@ class Handlers:
     async def select_exercise(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = context.user_data.get("lang", "ru")
         callback_data = update.callback_query.data
+        logger.info(f"select_exercise called with callback_data: {callback_data}")
+        
         exercise_id = int(callback_data.split("_")[1])
+        logger.info(f"exercise_id: {exercise_id}")
 
         exercises = await self.db.get_exercises()
         exercise = next((e for e in exercises if e["id"] == exercise_id), None)
         if not exercise:
+            logger.warning(f"Exercise not found for id: {exercise_id}")
             return State.EXERCISE_SELECT
 
         exercise_name = exercise["name_ru"] if lang == "ru" else exercise["name_en"]
