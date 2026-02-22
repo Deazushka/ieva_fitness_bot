@@ -3,6 +3,7 @@ import logging
 import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+from telegram import Update
 
 from src.bot import create_application, setup_webhook
 from src.database import Database
@@ -20,10 +21,11 @@ app = Flask(__name__)
 db = Database()
 application = None
 _initialized = False
+loop = None
 
 
 def init_sync():
-    global application, _initialized
+    global application, _initialized, loop
     if _initialized:
         return
     
@@ -56,9 +58,13 @@ init_sync()
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if request.method == 'POST':
-        update = request.get_json(force=True)
-        if application:
-            application.update_queue.put_nowait(update)
+        update_data = request.get_json(force=True)
+        if application and loop:
+            update = Update.de_json(update_data, application.bot)
+            asyncio.run_coroutine_threadsafe(
+                application.process_update(update),
+                loop
+            )
         return jsonify({'status': 'ok'})
     return jsonify({'status': 'error'}), 400
 
