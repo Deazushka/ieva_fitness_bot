@@ -1,74 +1,74 @@
-import aiosqlite
+import asyncpg
 import logging
 import os
-from datetime import datetime
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class Database:
-    def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or os.getenv('DATABASE_PATH', 'workout.db')
-        self._connection: Optional[aiosqlite.Connection] = None
+    def __init__(self):
+        self.database_url = os.getenv('DATABASE_URL')
+        self._pool: Optional[asyncpg.Pool] = None
 
     async def connect(self) -> None:
-        self._connection = await aiosqlite.connect(self.db_path)
+        if not self.database_url:
+            raise ValueError('DATABASE_URL environment variable is required')
+
+        self._pool = await asyncpg.create_pool(self.database_url, min_size=2, max_size=10)
         await self._create_tables()
-        logger.info(f'Connected to database: {self.db_path}')
+        logger.info('Connected to PostgreSQL database')
 
     async def disconnect(self) -> None:
-        if self._connection:
-            await self._connection.close()
+        if self._pool:
+            await self._pool.close()
             logger.info('Disconnected from database')
 
     async def _create_tables(self) -> None:
-        await self._connection.executescript('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY,
-                telegram_id INTEGER UNIQUE NOT NULL,
-                username TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+        async with self._pool.acquire() as conn:
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    telegram_id BIGINT UNIQUE NOT NULL,
+                    username TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
 
-            CREATE TABLE IF NOT EXISTS workouts (
-                id INTEGER PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                exercise TEXT NOT NULL,
-                sets INTEGER,
-                reps INTEGER,
-                weight REAL,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            );
+                CREATE TABLE IF NOT EXISTS workouts (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    exercise TEXT NOT NULL,
+                    sets INTEGER,
+                    reps INTEGER,
+                    weight REAL,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
 
-            CREATE TABLE IF NOT EXISTS workout_plans (
-                id INTEGER PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            );
-        ''')
-        await self._connection.commit()
+                CREATE TABLE IF NOT EXISTS workout_plans (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            ''')
+        logger.info('Database tables created/verified')
 
     async def get_or_create_user(self, telegram_id: int, username: Optional[str] = None) -> int:
-        cursor = await self._connection.execute(
-            'SELECT id FROM users WHERE telegram_id = ?', (telegram_id,)
-        )
-        row = await cursor.fetchone()
-        
-        if row:
-            return row[0]
-        
-        cursor = await self._connection.execute(
-            'INSERT INTO users (telegram_id, username) VALUES (?, ?)',
-            (telegram_id, username)
-        )
-        await self._connection.commit()
-        return cursor.lastrowid
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT id FROM users WHERE telegram_id = $1', telegram_id
+            )
+
+            if row:
+                return row['id']
+
+            row = await conn.fetchrow(
+                'INSERT INTO users (telegram_id, username) VALUES ($1, $2) RETURNING id',
+                telegram_id, username
+            )
+            return row['id']
 
     async def add_workout(
         self,
@@ -79,36 +79,38 @@ class Database:
         weight: Optional[float] = None,
         notes: Optional[str] = None
     ) -> int:
-        cursor = await self._connection.execute(
-            '''INSERT INTO workouts (user_id, exercise, sets, reps, weight, notes)
-               VALUES (?, ?, ?, ?, ?, ?)''',
-            (user_id, exercise, sets, reps, weight, notes)
-        )
-        await self._connection.commit()
-        return cursor.lastrowid
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                '''INSERT INTO workouts (user_id, exercise, sets, reps, weight, notes)
+                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING id''',
+                user_id, exercise, sets, reps, weight, notes
+            )
+            return row['id']
 
     async def get_user_workouts(self, user_id: int, limit: int = 10) -> list:
-        cursor = await self._connection.execute(
-            '''SELECT exercise, sets, reps, weight, notes, created_at
-               FROM workouts WHERE user_id = ?
-               ORDER BY created_at DESC LIMIT ?''',
-            (user_id, limit)
-        )
-        return await cursor.fetchall()
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                '''SELECT exercise, sets, reps, weight, notes, created_at
+                   FROM workouts WHERE user_id = $1
+                   ORDER BY created_at DESC LIMIT $2''',
+                user_id, limit
+            )
+            return [tuple(row.values()) for row in rows]
 
     async def get_workout_stats(self, user_id: int) -> dict:
-        cursor = await self._connection.execute(
-            'SELECT COUNT(*) FROM workouts WHERE user_id = ?', (user_id,)
-        )
-        total_workouts = (await cursor.fetchone())[0]
+        async with self._pool.acquire() as conn:
+            total_row = await conn.fetchrow(
+                'SELECT COUNT(*) as count FROM workouts WHERE user_id = $1', user_id
+            )
+            total_workouts = total_row['count']
 
-        cursor = await self._connection.execute(
-            'SELECT COUNT(DISTINCT exercise) FROM workouts WHERE user_id = ?',
-            (user_id,)
-        )
-        unique_exercises = (await cursor.fetchone())[0]
+            unique_row = await conn.fetchrow(
+                'SELECT COUNT(DISTINCT exercise) as count FROM workouts WHERE user_id = $1',
+                user_id
+            )
+            unique_exercises = unique_row['count']
 
-        return {
-            'total_workouts': total_workouts,
-            'unique_exercises': unique_exercises
-        }
+            return {
+                'total_workouts': total_workouts,
+                'unique_exercises': unique_exercises
+            }

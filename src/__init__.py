@@ -1,5 +1,5 @@
-from .bot import create_bot, create_application
+from .bot import create_application, setup_webhook
 from .database import Database
 from .handlers import Handlers
 
-__all__ = ['create_bot', 'create_application', 'Database', 'Handlers']
+__all__ = ['create_application', 'setup_webhook', 'Database', 'Handlers']

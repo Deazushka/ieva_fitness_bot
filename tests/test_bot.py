@@ -1,10 +1,19 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock
 from telegram import Update, Message, User
 from telegram.ext import ContextTypes
 
 from src.handlers import Handlers
-from src.database import Database
+
+
+@pytest.fixture
+def mock_db():
+    db = MagicMock()
+    db.get_or_create_user = AsyncMock(return_value=1)
+    db.add_workout = AsyncMock(return_value=1)
+    db.get_user_workouts = AsyncMock(return_value=[])
+    db.get_workout_stats = AsyncMock(return_value={'total_workouts': 0, 'unique_exercises': 0})
+    return db
 
 
 @pytest.fixture
@@ -27,15 +36,15 @@ def mock_context():
 
 
 @pytest.fixture
-def handlers():
-    return Handlers()
+def handlers(mock_db):
+    return Handlers(mock_db)
 
 
 class TestHandlers:
     @pytest.mark.asyncio
     async def test_help_command(self, handlers, mock_update, mock_context):
         await handlers.help(mock_update, mock_context)
-        
+
         mock_update.message.reply_text.assert_called_once()
         call_args = mock_update.message.reply_text.call_args
         assert '/start' in call_args[0][0]
@@ -62,3 +71,19 @@ class TestHandlers:
         assert 'incline' in exercise
         assert 'dumbbell' in exercise
         assert 'press' in exercise
+
+    @pytest.mark.asyncio
+    async def test_start_command(self, handlers, mock_update, mock_context, mock_db):
+        await handlers.start(mock_update, mock_context)
+
+        mock_db.get_or_create_user.assert_called_once_with(12345, 'test_user')
+        mock_update.message.reply_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_log_workout(self, handlers, mock_update, mock_context, mock_db):
+        mock_context.args = ['bench', 'press', '3x10', '60']
+
+        await handlers.log_workout(mock_update, mock_context)
+
+        mock_db.add_workout.assert_called_once()
+        mock_update.message.reply_text.assert_called_once()
