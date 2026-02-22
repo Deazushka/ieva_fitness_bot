@@ -96,11 +96,19 @@ def create_delete_categories_keyboard() -> InlineKeyboardMarkup:
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)])
     return InlineKeyboardMarkup(keyboard)
 
-def create_exercises_keyboard() -> InlineKeyboardMarkup:
-    exercises = get_exercises()
+def create_exercises_keyboard(category_name: str = None) -> InlineKeyboardMarkup:
+    from database import get_exercises_by_category
+    if category_name:
+        exercises = get_exercises_by_category(category_name)
+    else:
+        exercises = get_exercises()
     keyboard = []
     row = []
-    for i, (ex_id, ex_name, cat_id) in enumerate(exercises):
+    for i, ex_data in enumerate(exercises):
+        if len(ex_data) == 3:
+            ex_id, ex_name, cat_id = ex_data
+        else:
+            ex_id, ex_name = ex_data[0], ex_data[1]
         row.append(InlineKeyboardButton(f"• {ex_name}", callback_data=f"{CallbackData.EXERCISE_PREFIX}{ex_name}"))
         if len(row) == 2 or i == len(exercises) - 1:
             keyboard.append(row)
@@ -345,7 +353,7 @@ async def category_select_callback(update: Update, context: ContextTypes.DEFAULT
         await context.bot.send_message(
             chat_id=query.message.chat_id,
             text=get_message('select_exercise', user_id),
-            reply_markup=create_exercises_keyboard()
+            reply_markup=create_exercises_keyboard(category)
         )
         return ConversationState.EXERCISE_SELECT
     
@@ -385,9 +393,10 @@ async def exercise_select_callback(update: Update, context: ContextTypes.DEFAULT
         exercise_name = data[7:]
         if delete_exercise(exercise_name):
             await query.answer(f"✅ Упражнение '{exercise_name}' удалено")
+            category = active_workouts.get(user_id, {}).get('category')
             await query.edit_message_text(
                 get_message('select_exercise', user_id),
-                reply_markup=create_exercises_keyboard()
+                reply_markup=create_exercises_keyboard(category)
             )
         else:
             await query.answer(f"❌ Не удалось удалить '{exercise_name}'")
@@ -444,9 +453,10 @@ async def add_exercise_name_handler(update: Update, context: ContextTypes.DEFAUL
     add_exercise(exercise_name)
     await update.message.reply_text(get_message('exercise_added', user_id, name=exercise_name))
     
+    category = active_workouts.get(user_id, {}).get('category')
     await update.message.reply_text(
         get_message('select_exercise', user_id),
-        reply_markup=create_exercises_keyboard()
+        reply_markup=create_exercises_keyboard(category)
     )
     return ConversationState.EXERCISE_SELECT
 
@@ -467,9 +477,10 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     exercise = context.user_data.get('current_exercise')
     if not exercise:
         logger.warning(f"No current exercise for user {user_id}")
+        category = active_workouts.get(user_id, {}).get('category')
         await update.message.reply_text(
             get_message('invalid_input', user_id),
-            reply_markup=create_exercises_keyboard()
+            reply_markup=create_exercises_keyboard(category)
         )
         return ConversationState.EXERCISE_SELECT
     
@@ -508,10 +519,11 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     del context.user_data['current_exercise']
     
+    category = active_workouts[user_id].get('category')
     logger.info(f"Returning to exercise selection for user {user_id}")
     await update.message.reply_text(
         get_message('select_exercise', user_id),
-        reply_markup=create_exercises_keyboard()
+        reply_markup=create_exercises_keyboard(category)
     )
     return ConversationState.EXERCISE_SELECT
 
@@ -525,9 +537,10 @@ async def exercise_input_callback(update: Update, context: ContextTypes.DEFAULT_
         if 'current_exercise' in context.user_data:
             del context.user_data['current_exercise']
         
+        category = active_workouts.get(user_id, {}).get('category')
         await query.edit_message_text(
             get_message('select_exercise', user_id),
-            reply_markup=create_exercises_keyboard()
+            reply_markup=create_exercises_keyboard(category)
         )
         return ConversationState.EXERCISE_SELECT
     
