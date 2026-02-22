@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from flask import Flask, request, jsonify
@@ -18,34 +19,38 @@ app = Flask(__name__)
 
 db = Database()
 application = None
+_initialized = False
 
 
-async def init_app():
-    global application
+def init_sync():
+    global application, _initialized
+    if _initialized:
+        return
+    
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
-        raise ValueError('TELEGRAM_BOT_TOKEN environment variable is required')
+        logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
+        return
 
-    await db.connect()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    loop.run_until_complete(db.connect())
     logger.info('Database connected')
 
     application = create_application(token, db)
-    await application.initialize()
-    await application.start()
+    loop.run_until_complete(application.initialize())
+    loop.run_until_complete(application.start())
     logger.info('Application initialized')
 
     render_url = os.getenv('RENDER_EXTERNAL_URL')
     if render_url:
-        await setup_webhook(application, token, render_url)
+        loop.run_until_complete(setup_webhook(application, token, render_url))
 
-    return application
+    _initialized = True
 
 
-@app.before_request
-async def before_first_request():
-    global application
-    if application is None:
-        await init_app()
+init_sync()
 
 
 @app.route('/webhook', methods=['POST'])
@@ -60,6 +65,8 @@ def webhook():
 
 @app.route('/health', methods=['GET'])
 def health():
+    if not _initialized:
+        return jsonify({'status': 'not initialized'}), 503
     return jsonify({'status': 'healthy'})
 
 
@@ -69,11 +76,5 @@ def index():
 
 
 if __name__ == '__main__':
-    import asyncio
-
-    async def run():
-        await init_app()
-        port = int(os.environ.get('PORT', 5000))
-        app.run(host='0.0.0.0', port=port)
-
-    asyncio.run(run())
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
