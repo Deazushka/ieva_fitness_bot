@@ -1,8 +1,8 @@
-import re
-import logging
 import os
+import logging
 from datetime import datetime
 from threading import Thread
+from typing import Optional, Dict, Any
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,15 +16,16 @@ from telegram.ext import (
 )
 from config import TOKEN, logger
 from database import (
-    get_categories, add_category, delete_category, get_exercises, add_exercise, delete_exercise,
+    get_categories, add_category, delete_category, 
+    get_exercises, get_exercises_by_category, add_exercise, delete_exercise,
     start_workout, add_exercise_to_workout, finish_workout, cancel_workout,
     get_user_workouts, get_workout_details, get_workout_stats,
     get_user_settings, update_user_settings, set_language, set_notifications,
-    get_user_sets, add_user_set, delete_user_set, get_set_by_name
+    get_user_sets, add_user_set, delete_user_set, get_set_by_name,
+    get_exercise_sets, add_exercise_set, delete_exercise_set, get_exercise_set_by_name,
+    get_exercise_by_name, get_active_workout
 )
 from constants import ConversationState, CallbackData, MESSAGES
-
-active_workouts = {}
 
 app = Flask(__name__)
 
@@ -44,7 +45,8 @@ def get_user_language(user_id: int) -> str:
     try:
         settings = get_user_settings(user_id)
         return settings.get('language', 'ru')
-    except:
+    except Exception as e:
+        logger.warning(f"Failed to get language for user {user_id}: {e}")
         return 'ru'
 
 def get_message(key: str, user_id: int, **kwargs) -> str:
@@ -132,6 +134,35 @@ def create_delete_exercises_keyboard() -> InlineKeyboardMarkup:
     for i, (ex_id, ex_name, cat_id) in enumerate(exercises):
         row.append(InlineKeyboardButton(f"🗑️ {ex_name}", callback_data=f"del_ex_{ex_name}"))
         if len(row) == 2 or i == len(exercises) - 1:
+            keyboard.append(row)
+            row = []
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)])
+    return InlineKeyboardMarkup(keyboard)
+
+def create_exercise_detail_keyboard(exercise_name: str) -> InlineKeyboardMarkup:
+    exercise_sets = get_exercise_sets(exercise_name)
+    keyboard = []
+    row = []
+    for i, (set_id, ex_id, name, sets, reps, weight) in enumerate(exercise_sets):
+        row.append(InlineKeyboardButton(f"📊 {name}", callback_data=f"{CallbackData.EXERCISE_SET_PREFIX}{name}"))
+        if len(row) == 2 or i == len(exercise_sets) - 1:
+            keyboard.append(row)
+            row = []
+    
+    keyboard.append([
+        InlineKeyboardButton("➕ Добавить", callback_data=CallbackData.ADD_EXERCISE_SET),
+        InlineKeyboardButton("🗑️ Удалить", callback_data=CallbackData.DELETE_EXERCISE_SET),
+    ])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)])
+    return InlineKeyboardMarkup(keyboard)
+
+def create_delete_exercise_sets_keyboard(exercise_name: str) -> InlineKeyboardMarkup:
+    exercise_sets = get_exercise_sets(exercise_name)
+    keyboard = []
+    row = []
+    for i, (set_id, ex_id, name, sets, reps, weight) in enumerate(exercise_sets):
+        row.append(InlineKeyboardButton(f"🗑️ {name}", callback_data=f"del_ex_set_{name}"))
+        if len(row) == 2 or i == len(exercise_sets) - 1:
             keyboard.append(row)
             row = []
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)])
@@ -270,10 +301,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.message.from_user.id if update.message else update.callback_query.from_user.id
     
-    if user_id in active_workouts:
-        workout_id = active_workouts[user_id]['workout_id']
-        cancel_workout(workout_id)
-        del active_workouts[user_id]
+    active_workout = get_active_workout(user_id)
+    if active_workout:
+        cancel_workout(active_workout['workout_id'])
         await update.message.reply_text(get_message('workout_cancelled', user_id))
     
     await update.message.reply_text(
@@ -304,7 +334,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         else:
             stats = get_workout_stats(user_id)
-            last = datetime.fromisoformat(stats['last_workout']).strftime("%d.%m.%Y") if stats['last_workout'] else "Нет"
+            last = datetime.fromisoformat(stats['last_workout']).strftime("%d.%m.%Y") if stats['last_workout'] else get_message('no_exercises', user_id).split('\n')[0]
             text = get_message('history_title', user_id, 
                              total=stats['total_workouts'],
                              exercises=stats['total_exercises'],
@@ -353,7 +383,7 @@ async def category_select_callback(update: Update, context: ContextTypes.DEFAULT
     
     elif data == CallbackData.DELETE_CATEGORY:
         await query.edit_message_text(
-            "🗑️ Выберите категорию для удаления:",
+            get_message('select_category_delete', user_id),
             reply_markup=create_delete_categories_keyboard()
         )
         return ConversationState.CATEGORY_SELECT
@@ -361,20 +391,19 @@ async def category_select_callback(update: Update, context: ContextTypes.DEFAULT
     elif data.startswith("del_cat_"):
         category_name = data[8:]
         if delete_category(category_name):
-            await query.answer(f"✅ Категория '{category_name}' удалена")
+            await query.answer(get_message('category_deleted_success', user_id, name=category_name))
             await query.edit_message_text(
                 get_message('select_category', user_id),
                 reply_markup=create_categories_keyboard()
             )
         else:
-            await query.answer(f"❌ Не удалось удалить '{category_name}'")
+            await query.answer(get_message('category_delete_failed', user_id, name=category_name))
         return ConversationState.CATEGORY_SELECT
     
     elif data.startswith(CallbackData.CATEGORY_PREFIX):
         category = data[len(CallbackData.CATEGORY_PREFIX):]
         username = query.from_user.username or query.from_user.first_name
         workout_id = start_workout(user_id, username, category)
-        active_workouts[user_id] = {'workout_id': workout_id, 'category': category}
         
         await query.edit_message_text(
             get_message('workout_started', user_id, category=category),
@@ -414,7 +443,7 @@ async def exercise_select_callback(update: Update, context: ContextTypes.DEFAULT
     
     elif data == CallbackData.DELETE_EXERCISE:
         await query.edit_message_text(
-            "🗑️ Выберите упражнение для удаления:",
+            get_message('select_exercise_delete', user_id),
             reply_markup=create_delete_exercises_keyboard()
         )
         return ConversationState.EXERCISE_SELECT
@@ -422,28 +451,29 @@ async def exercise_select_callback(update: Update, context: ContextTypes.DEFAULT
     elif data.startswith("del_ex_"):
         exercise_name = data[7:]
         if delete_exercise(exercise_name):
-            await query.answer(f"✅ Упражнение '{exercise_name}' удалено")
-            category = active_workouts.get(user_id, {}).get('category')
+            await query.answer(get_message('exercise_deleted_success', user_id, name=exercise_name))
+            active_workout = get_active_workout(user_id)
+            category = active_workout.get('category') if active_workout else None
             await query.edit_message_text(
                 get_message('select_exercise', user_id),
                 reply_markup=create_exercises_keyboard(category)
             )
         else:
-            await query.answer(f"❌ Не удалось удалить '{exercise_name}'")
+            await query.answer(get_message('exercise_delete_failed', user_id, name=exercise_name))
         return ConversationState.EXERCISE_SELECT
     
     elif data == CallbackData.FINISH_WORKOUT:
-        if user_id not in active_workouts:
+        active_workout = get_active_workout(user_id)
+        if not active_workout:
             await query.edit_message_text(
                 get_message('no_active_workout', user_id),
                 reply_markup=create_main_menu_keyboard(user_id)
             )
             return ConversationState.MAIN_MENU
         
-        workout_id = active_workouts[user_id]['workout_id']
+        workout_id = active_workout['workout_id']
         finish_workout(workout_id)
         summary = format_workout_summary(workout_id, user_id)
-        del active_workouts[user_id]
         
         await query.edit_message_text(
             summary,
@@ -453,10 +483,9 @@ async def exercise_select_callback(update: Update, context: ContextTypes.DEFAULT
         return ConversationState.MAIN_MENU
     
     elif data == CallbackData.CANCEL_WORKOUT:
-        if user_id in active_workouts:
-            workout_id = active_workouts[user_id]['workout_id']
-            cancel_workout(workout_id)
-            del active_workouts[user_id]
+        active_workout = get_active_workout(user_id)
+        if active_workout:
+            cancel_workout(active_workout['workout_id'])
         
         await query.edit_message_text(
             get_message('cancel_workout', user_id),
@@ -469,11 +498,11 @@ async def exercise_select_callback(update: Update, context: ContextTypes.DEFAULT
         context.user_data['current_exercise'] = exercise
         
         await query.edit_message_text(
-            get_message('select_set', user_id, exercise=exercise),
+            get_message('exercise_detail', user_id, exercise=exercise),
             parse_mode='Markdown',
-            reply_markup=create_sets_keyboard(user_id)
+            reply_markup=create_exercise_detail_keyboard(exercise)
         )
-        return ConversationState.SET_SELECT
+        return ConversationState.EXERCISE_DETAIL
     
     return ConversationState.EXERCISE_SELECT
 
@@ -481,15 +510,59 @@ async def add_exercise_name_handler(update: Update, context: ContextTypes.DEFAUL
     user_id = update.message.from_user.id
     exercise_name = update.message.text.strip()
     
-    add_exercise(exercise_name)
-    await update.message.reply_text(get_message('exercise_added', user_id, name=exercise_name))
+    context.user_data['new_exercise_name'] = exercise_name
     
-    category = active_workouts.get(user_id, {}).get('category')
     await update.message.reply_text(
-        get_message('select_exercise', user_id),
-        reply_markup=create_exercises_keyboard(category)
+        get_message('enter_exercise_set', user_id, exercise=exercise_name),
+        parse_mode='Markdown'
     )
-    return ConversationState.EXERCISE_SELECT
+    return ConversationState.ADD_EXERCISE_SET
+
+async def add_exercise_set_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.message.from_user.id
+    text = update.message.text.strip()
+    
+    exercise_name = context.user_data.get('new_exercise_name')
+    if not exercise_name:
+        active_workout = get_active_workout(user_id)
+        category = active_workout.get('category') if active_workout else None
+        await update.message.reply_text(
+            get_message('select_exercise', user_id),
+            reply_markup=create_exercises_keyboard(category)
+        )
+        return ConversationState.EXERCISE_SELECT
+    
+    parts = text.lower().replace('х', 'x').split('x')
+    if len(parts) >= 2:
+        try:
+            sets = int(parts[0])
+            reps = parts[1]
+            weight = float(parts[2]) if len(parts) >= 3 else None
+            
+            add_exercise(exercise_name)
+            add_exercise_set(exercise_name, text, sets, reps, weight)
+            
+            await update.message.reply_text(
+                get_message('exercise_added_with_sets', user_id, name=exercise_name, sets=text)
+            )
+            
+            del context.user_data['new_exercise_name']
+            
+            active_workout = get_active_workout(user_id)
+            category = active_workout.get('category') if active_workout else None
+            await update.message.reply_text(
+                get_message('select_exercise', user_id),
+                reply_markup=create_exercises_keyboard(category)
+            )
+            return ConversationState.EXERCISE_SELECT
+        except (ValueError, IndexError):
+            pass
+    
+    await update.message.reply_text(
+        get_message('invalid_format_sets', user_id),
+        parse_mode='Markdown'
+    )
+    return ConversationState.ADD_EXERCISE_SET
 
 async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.message.from_user.id
@@ -497,7 +570,8 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     logger.info(f"User {user_id} entered: {text}")
     
-    if user_id not in active_workouts:
+    active_workout = get_active_workout(user_id)
+    if not active_workout:
         logger.warning(f"No active workout for user {user_id}")
         await update.message.reply_text(
             get_message('no_active_workout', user_id),
@@ -508,7 +582,7 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     exercise = context.user_data.get('current_exercise')
     if not exercise:
         logger.warning(f"No current exercise for user {user_id}")
-        category = active_workouts.get(user_id, {}).get('category')
+        category = active_workout.get('category')
         await update.message.reply_text(
             get_message('invalid_input', user_id),
             reply_markup=create_exercises_keyboard(category)
@@ -532,13 +606,13 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
         logger.warning(f"Invalid input from user {user_id}: {text}")
         keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data=CallbackData.BACK)]]
         await update.message.reply_text(
-            "❌ Неверный формат. Введите: *подходы повторения вес*\n\nПримеры:\n• 3 12\n• 4 10 50\n• 5 5 100",
+            get_message('invalid_format_input', user_id),
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return ConversationState.EXERCISE_INPUT
     
-    workout_id = active_workouts[user_id]['workout_id']
+    workout_id = active_workout['workout_id']
     add_exercise_to_workout(workout_id, exercise, sets, reps, weight)
     logger.info(f"Exercise {exercise} added to workout {workout_id}: {sets}x{reps}, weight={weight}")
     
@@ -550,7 +624,7 @@ async def exercise_input_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     del context.user_data['current_exercise']
     
-    category = active_workouts[user_id].get('category')
+    category = active_workout.get('category')
     logger.info(f"Returning to exercise selection for user {user_id}")
     await update.message.reply_text(
         get_message('select_exercise', user_id),
@@ -568,7 +642,8 @@ async def exercise_input_callback(update: Update, context: ContextTypes.DEFAULT_
         if 'current_exercise' in context.user_data:
             del context.user_data['current_exercise']
         
-        category = active_workouts.get(user_id, {}).get('category')
+        active_workout = get_active_workout(user_id)
+        category = active_workout.get('category') if active_workout else None
         await query.edit_message_text(
             get_message('select_exercise', user_id),
             reply_markup=create_exercises_keyboard(category)
@@ -587,7 +662,8 @@ async def set_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         if 'current_exercise' in context.user_data:
             del context.user_data['current_exercise']
         
-        category = active_workouts.get(user_id, {}).get('category')
+        active_workout = get_active_workout(user_id)
+        category = active_workout.get('category') if active_workout else None
         await query.edit_message_text(
             get_message('select_exercise', user_id),
             reply_markup=create_exercises_keyboard(category)
@@ -600,7 +676,7 @@ async def set_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     elif data == CallbackData.DELETE_SET:
         await query.edit_message_text(
-            "🗑️ Выберите подход для удаления:",
+            get_message('select_set_delete', user_id),
             reply_markup=create_delete_sets_keyboard(user_id)
         )
         return ConversationState.SET_SELECT
@@ -608,7 +684,7 @@ async def set_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif data.startswith("del_set_"):
         set_name = data[8:]
         if delete_user_set(user_id, set_name):
-            await query.answer(f"✅ Подход '{set_name}' удалён")
+            await query.answer(get_message('set_deleted_success', user_id, name=set_name))
             exercise = context.user_data.get('current_exercise', '')
             await query.edit_message_text(
                 get_message('select_set', user_id, exercise=exercise),
@@ -616,7 +692,7 @@ async def set_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_markup=create_sets_keyboard(user_id)
             )
         else:
-            await query.answer(f"❌ Не удалось удалить '{set_name}'")
+            await query.answer(get_message('set_delete_failed', user_id, name=set_name))
         return ConversationState.SET_SELECT
     
     elif data.startswith(CallbackData.SET_PREFIX):
@@ -627,8 +703,9 @@ async def set_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             _, _, sets, reps, weight = set_data
             exercise = context.user_data.get('current_exercise')
             
-            if exercise and user_id in active_workouts:
-                workout_id = active_workouts[user_id]['workout_id']
+            active_workout = get_active_workout(user_id)
+            if exercise and active_workout:
+                workout_id = active_workout['workout_id']
                 add_exercise_to_workout(workout_id, exercise, sets, reps, weight)
                 logger.info(f"Exercise {exercise} added with set {set_name}")
                 
@@ -637,7 +714,7 @@ async def set_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                 
                 del context.user_data['current_exercise']
                 
-                category = active_workouts[user_id].get('category')
+                category = active_workout.get('category')
                 await query.edit_message_text(
                     get_message('select_exercise', user_id),
                     reply_markup=create_exercises_keyboard(category)
@@ -671,7 +748,7 @@ async def add_set_name_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             pass
     
     await update.message.reply_text(
-        "❌ Неверный формат. Введите: *подходы x повторения*\n\nПримеры:\n• 3x12\n• 4x10\n• 5x5",
+        get_message('invalid_format_sets', user_id),
         parse_mode='Markdown'
     )
     return ConversationState.ADD_SET_NAME
