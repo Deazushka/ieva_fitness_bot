@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import threading
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from telegram import Update
@@ -19,40 +20,45 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 db = Database()
-application = None
-_initialized = False
-loop = None
+_ptb_app = None
+_event_loop = None
 
 
-def init_sync():
-    global application, _initialized, loop
-    if _initialized:
-        return
+def run_async(coro):
+    global _event_loop
+    if _event_loop is None:
+        return None
+    future = asyncio.run_coroutine_threadsafe(coro, _event_loop)
+    return future.result(timeout=30)
+
+
+def event_loop_thread():
+    global _event_loop, _ptb_app
+    
+    _event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_event_loop)
     
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not token:
         logger.error('TELEGRAM_BOT_TOKEN environment variable is required')
         return
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    loop.run_until_complete(db.connect())
+    _event_loop.run_until_complete(db.connect())
     logger.info('Database connected')
 
-    application = create_application(token, db)
-    loop.run_until_complete(application.initialize())
-    loop.run_until_complete(application.start())
+    _ptb_app = create_application(token, db)
+    _event_loop.run_until_complete(_ptb_app.initialize())
+    _event_loop.run_until_complete(_ptb_app.start())
     logger.info('Application initialized')
 
     render_url = os.getenv('RENDER_EXTERNAL_URL')
     if render_url:
-        loop.run_until_complete(setup_webhook(application, token, render_url))
+        _event_loop.run_until_complete(setup_webhook(_ptb_app, token, render_url))
 
-    _initialized = True
+    _event_loop.run_forever()
 
 
-init_sync()
+threading.Thread(target=event_loop_thread, daemon=True).start()
 
 
 @app.route('/webhook', methods=['POST'])
@@ -60,26 +66,27 @@ def webhook():
     if request.method == 'POST':
         update_data = request.get_json(force=True)
         logger.info(f'Received webhook update: {update_data}')
-        if application and loop:
-            update = Update.de_json(update_data, application.bot)
+        
+        if _ptb_app and _event_loop:
+            update = Update.de_json(update_data, _ptb_app.bot)
             if update:
                 logger.info(f'Processing update: {update.update_id}')
-                asyncio.run_coroutine_threadsafe(
-                    application.process_update(update),
-                    loop
-                )
+                try:
+                    run_async(_ptb_app.process_update(update))
+                    logger.info(f'Update {update.update_id} processed')
+                except Exception as e:
+                    logger.error(f'Error processing update: {e}')
             else:
                 logger.warning('Failed to parse update')
         else:
-            logger.warning(f'Application not ready: app={application}, loop={loop}')
+            logger.warning('Application not initialized')
+        
         return jsonify({'status': 'ok'})
     return jsonify({'status': 'error'}), 400
 
 
 @app.route('/health', methods=['GET'])
 def health():
-    if not _initialized:
-        return jsonify({'status': 'not initialized'}), 503
     return jsonify({'status': 'healthy'})
 
 
