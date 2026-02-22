@@ -62,6 +62,20 @@ CREATE TABLE IF NOT EXISTS user_settings (
 )
 """)
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS workout_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    sets INTEGER,
+    reps TEXT,
+    weight REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES user_settings(user_id),
+    UNIQUE(user_id, name)
+)
+""")
+
 conn.commit()
 
 DEFAULT_CATEGORIES = [
@@ -83,6 +97,14 @@ DEFAULT_EXERCISES = [
     "Разгибание на трицепс",
     "Подъёмы на носки",
     "Планка"
+]
+
+DEFAULT_SETS = [
+    ("3x12", 3, "12", None),
+    ("4x10", 4, "10", None),
+    ("5x5", 5, "5", None),
+    ("3x15", 3, "15", None),
+    ("4x8", 4, "8", None),
 ]
 
 def init_default_data():
@@ -276,5 +298,51 @@ def set_notifications(user_id, enabled, time=None):
     update_user_settings(user_id, notifications_enabled=int(enabled))
     if time:
         update_user_settings(user_id, notification_time=time)
+
+def get_user_sets(user_id):
+    user_sets = cursor.execute("""
+        SELECT id, name, sets, reps, weight FROM workout_sets 
+        WHERE user_id = ? ORDER BY created_at
+    """, (user_id,)).fetchall()
+    
+    if not user_sets:
+        for name, sets, reps, weight in DEFAULT_SETS:
+            cursor.execute("""
+                INSERT INTO workout_sets(user_id, name, sets, reps, weight) VALUES(?, ?, ?, ?, ?)
+            """, (user_id, name, sets, reps, weight))
+        conn.commit()
+        user_sets = cursor.execute("""
+            SELECT id, name, sets, reps, weight FROM workout_sets 
+            WHERE user_id = ? ORDER BY created_at
+        """, (user_id,)).fetchall()
+        logger.info(f"Default sets initialized for user {user_id}")
+    
+    return user_sets
+
+def add_user_set(user_id, name, sets, reps, weight=None):
+    cursor.execute("""
+        INSERT OR IGNORE INTO workout_sets(user_id, name, sets, reps, weight) 
+        VALUES(?, ?, ?, ?, ?)
+    """, (user_id, name, sets, reps, weight))
+    conn.commit()
+    logger.info(f"Set '{name}' added for user {user_id}")
+    return cursor.lastrowid
+
+def delete_user_set(user_id, name):
+    cursor.execute("""
+        DELETE FROM workout_sets WHERE user_id = ? AND name = ?
+    """, (user_id, name))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    if deleted:
+        logger.info(f"Set '{name}' deleted for user {user_id}")
+    return deleted
+
+def get_set_by_name(user_id, name):
+    result = cursor.execute("""
+        SELECT id, name, sets, reps, weight FROM workout_sets 
+        WHERE user_id = ? AND name = ?
+    """, (user_id, name)).fetchone()
+    return result
 
 init_default_data()

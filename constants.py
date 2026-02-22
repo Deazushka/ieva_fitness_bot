@@ -6,6 +6,7 @@ class ConversationState(IntEnum):
     CATEGORY_SELECT = 2
     EXERCISE_SELECT = 3
     EXERCISE_INPUT = 4
+    SET_SELECT = 5
     
     ADD_CATEGORY = 10
     ADD_CATEGORY_NAME = 11
@@ -14,6 +15,10 @@ class ConversationState(IntEnum):
     ADD_EXERCISE = 13
     ADD_EXERCISE_NAME = 14
     DELETE_EXERCISE = 15
+    
+    ADD_SET = 16
+    ADD_SET_NAME = 17
+    DELETE_SET = 18
     
     SETTINGS_MENU = 20
     SETTINGS_LANGUAGE = 21
@@ -41,6 +46,10 @@ class CallbackData:
     DELETE_EXERCISE = "delete_exercise"
     FINISH_WORKOUT = "finish_workout"
     CANCEL_WORKOUT = "cancel_workout"
+    
+    SET_PREFIX = "set_"
+    ADD_SET = "add_set"
+    DELETE_SET = "delete_set"
     
     HISTORY_PAGE_PREFIX = "hist_page_"
     HISTORY_DETAIL_PREFIX = "hist_det_"
@@ -107,6 +116,11 @@ MESSAGES = {
         'exercise_deleted': "✅ Упражнение '{name}' удалено",
         'enter_category_name': "Введите название новой категории:",
         'enter_exercise_name': "Введите название нового упражнения:",
+        'select_set': "🔢 Выберите подход для: *{exercise}*",
+        'enter_set_name': "Введите название подхода (например: 3x12):",
+        'set_added': "✅ Подход '{name}' добавлен",
+        'set_deleted': "✅ Подход '{name}' удалён",
+        'workout_exercise_added': "✅ *{exercise}*\nПодходы: {sets}x{reps}{weight}",
         'cancel_workout': "❌ Тренировка отменена",
         'workout_cancelled': "✅ Тренировка отменена",
         'back_to_main': "Возврат в главное меню...",
@@ -169,6 +183,11 @@ MESSAGES = {
         'exercise_deleted': "✅ Exercise '{name}' deleted",
         'enter_category_name': "Enter new category name:",
         'enter_exercise_name': "Enter new exercise name:",
+        'select_set': "🔢 Select set for: *{exercise}*",
+        'enter_set_name': "Enter set name (e.g., 3x12):",
+        'set_added': "✅ Set '{name}' added",
+        'set_deleted': "✅ Set '{name}' deleted",
+        'workout_exercise_added': "✅ *{exercise}*\nSets: {sets}x{reps}{weight}",
         'cancel_workout': "❌ Workout cancelled",
         'workout_cancelled': "✅ Workout cancelled",
         'back_to_main': "Returning to main menu...",
