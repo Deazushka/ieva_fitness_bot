@@ -58,7 +58,7 @@ def webhook():
     if request.method == 'POST':
         update = request.get_json(force=True)
         if application:
-            application.update_queue.put(update)
+            application.update_queue.put_nowait(update)
         return jsonify({'status': 'ok'})
     return jsonify({'status': 'error'}), 400
 
