@@ -94,10 +94,17 @@ class Database:
                 );
             ''')
             
-            try:
-                await conn.execute("ALTER TABLE workouts ADD COLUMN is_active BOOLEAN DEFAULT TRUE")
-            except asyncpg.exceptions.DuplicateColumnError:
-                pass
+            for col, col_type in [
+                ("category_name", "TEXT"),
+                ("started_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                ("finished_at", "TIMESTAMP"),
+                ("is_active", "BOOLEAN DEFAULT TRUE"),
+                ("total_exercises", "INTEGER DEFAULT 0"),
+            ]:
+                try:
+                    await conn.execute(f"ALTER TABLE workouts ADD COLUMN {col} {col_type}")
+                except asyncpg.exceptions.DuplicateColumnError:
+                    pass
 
     async def _init_default_data(self) -> None:
         async with self._pool.acquire() as conn:
