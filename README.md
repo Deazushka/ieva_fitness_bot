@@ -16,13 +16,13 @@ Render — это отличный облачный хостинг, которы
 1. Убедитесь, что ваш код запушен в репозиторий на **GitHub**.
 2. Получите `TELEGRAM_BOT_TOKEN` (токен бота) у @BotFather.
 
-### Шаг 2: Создание Web Service на Render
+### Шаг 2: Создание Background Worker на Render
 1. Зарегистрируйтесь на [Render.com](https://render.com/) через ваш GitHub аккаунт.
-2. В панели управления (Dashboard) нажмите **New +** -> **Web Service**.
+2. В панели управления (Dashboard) нажмите **New +** -> **Background Worker** (⚠️ важно выбрать именно этот тип, а не Web Service, так как бот работает в режиме polling и не требует открытого порта).
 3. Выберите `Build and deploy from a Git repository`.
 4. В списке репозиториев найдите `ieva_fitness_bot` (или вставьте ссылку на него) и нажмите **Connect**.
 
-### Шаг 3: Настройка Web Service
+### Шаг 3: Настройка Background Worker
 Заполните следующие поля:
 - **Name:** Любое имя (например, `telegram-fitness-bot`).
 - **Region:** Любой (рекомендуется Frankfurt, так он ближе к серверам Telegram).
@@ -39,7 +39,7 @@ Render — это отличный облачный хостинг, которы
 - **Value:** `1234567890:AAaBbBcCcDdDeEeFfFgGhHiIjJkKlLmMnNo` (Ваш настоящий токен)
 
 ### Шаг 5: Запуск
-Нажмите кнопку **Create Web Service** в самом низу.
+Нажмите кнопку **Create Background Worker** в самом низу.
 Render начнет собирать и запускать ваш код. Как только появится статус `In progress...` сменится на `Live`, можете открывать Telegram и проверять вашего бота — он уже будет работать 24/7 в облаке!
 
 > **Важно про БД на бесплатном тарифе Render:** 
