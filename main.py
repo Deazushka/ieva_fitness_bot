@@ -1,72 +1,50 @@
+import asyncio
 import logging
-import os
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response
-from telegram import Update
-from telegram.ext import ApplicationBuilder
+from telegram.ext import Application
+from config import TELEGRAM_BOT_TOKEN
+from database import create_tables
+from handlers.start import setup_start_handlers
+from handlers.workout import setup_workout_handlers
+from handlers.history import setup_history_handlers
 
-from src.database import Database
-from src.handlers import Handlers
-
+# Настройка логирования
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN is required")
+async def init_db():
+     await create_tables()
+     logger.info("База данных инициализирована.")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is required")
+def main():
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("Токен бота не задан. Установите переменную окружения TELEGRAM_BOT_TOKEN.")
+        return
 
-db = Database(DATABASE_URL)
+    # Инициализация БД (асинхронно, перед запуском пулинга)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(init_db())
 
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await db.connect()
-    logger.info("Database connected")
+    # Регистрация обработчиков
+    setup_start_handlers(application)
+    setup_workout_handlers(application)
+    setup_history_handlers(application)
+    
+    # Регистрация заглушки для меню настроек
+    from telegram import Update
+    from telegram.ext import ContextTypes, MessageHandler, filters
+    from keyboards import get_main_menu
+    
+    async def settings_dummy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+         await update.message.reply_text("Настройки пока в разработке.", reply_markup=get_main_menu())
+         
+    application.add_handler(MessageHandler(filters.Regex("^⚙️ Настройки$"), settings_dummy))
 
-    ptb = ApplicationBuilder().token(TOKEN).updater(None).build()
-    Handlers(db).register(ptb)
+    logger.info("Бот запущен. Ожидание сообщений...")
+    application.run_polling()
 
-    await ptb.initialize()
-    await ptb.start()
-    logger.info("Bot started")
-
-    webhook_url = f"{os.getenv('RENDER_EXTERNAL_URL')}/webhook"
-    await ptb.bot.set_webhook(webhook_url)
-    logger.info(f"Webhook set: {webhook_url}")
-
-    app.state.ptb = ptb
-
-    yield
-
-    await ptb.stop()
-    await ptb.shutdown()
-    await db.disconnect()
-    logger.info("Shutdown complete")
-
-
-app = FastAPI(lifespan=lifespan)
-
-
-@app.post("/webhook")
-async def webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, app.state.ptb.bot)
-    await app.state.ptb.process_update(update)
-    return Response(status_code=200)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-
-
-@app.get("/")
-async def root():
-    return {"status": "running", "service": "workout-bot"}
+if __name__ == '__main__':
+    main()

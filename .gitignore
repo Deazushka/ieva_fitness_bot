@@ -1,42 +1,34 @@
-# Environment
-.env
-.venv/
-
 # Python
-*.py[cod]
 __pycache__/
+*.py[cod]
+*$py.class
 *.so
 .Python
-venv/
 env/
-*.egg-info/
-dist/
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Database
+# Virtual Environment
+venv/
+.env
+
+# База данных SQLite
 *.db
-*.sqlite
 *.sqlite3
 
 # IDE
-.vscode/
 .idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Telegram
-*.session
-*.session-journal
+.vscode/
