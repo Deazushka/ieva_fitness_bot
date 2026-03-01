@@ -1,47 +1,63 @@
-# Ieva Fitness Bot
+# Telegram Fitness Bot 💪
 
-Telegram-бот для отслеживания тренировок.
+Удобный и быстрый бот для отслеживания тренировок в Telegram.
 
-## Команды
+## Требования
+- Python 3.10+
+- Токен Telegram бота от [@BotFather](https://t.me/BotFather)
 
-| Команда | Описание |
-|---------|----------|
-| `/start` | Регистрация |
-| `/help` | Справка |
-| `/log <упражнение> <подходы>x<повторы> <вес>` | Записать тренировку |
-| `/stats` | Статистика |
-| `/history` | История |
+---
 
-**Примеры:**
-- `/log bench press 3x10 60`
-- `/log squat 5x5 100`
-- `/log pull ups 3x12`
+## 🚀 Инструкция по развертыванию (Деплой на Render.com)
 
-## Локальный запуск
+Render — это отличный облачный хостинг, который предоставляет бесплатный тариф для запуска веб-сервисов (подойдет для бота).
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+### Шаг 1: Подготовка
+1. Убедитесь, что ваш код запушен в репозиторий на **GitHub**.
+2. Получите `TELEGRAM_BOT_TOKEN` (токен бота) у @BotFather.
 
-cp .env.example .env
-# Отредактируйте .env
+### Шаг 2: Создание Web Service на Render
+1. Зарегистрируйтесь на [Render.com](https://render.com/) через ваш GitHub аккаунт.
+2. В панели управления (Dashboard) нажмите **New +** -> **Web Service**.
+3. Выберите `Build and deploy from a Git repository`.
+4. В списке репозиториев найдите `ieva_fitness_bot` (или вставьте ссылку на него) и нажмите **Connect**.
 
-uvicorn main:app --reload
-```
+### Шаг 3: Настройка Web Service
+Заполните следующие поля:
+- **Name:** Любое имя (например, `telegram-fitness-bot`).
+- **Region:** Любой (рекомендуется Frankfurt, так он ближе к серверам Telegram).
+- **Branch:** `main`
+- **Environment:** `Python 3`
+- **Build Command:** `pip install -r requirements.txt` (Команда сборки зависимостей)
+- **Start Command:** `python main.py` (Команда запуска бота)
+- **Instance Type:** `Free` (Бесплатный тариф)
 
-## Деплой на Render
+### Шаг 4: Переменные окружения (ОЧЕНЬ ВАЖНО)
+Прокрутите страницу вниз и нажмите на раздел **Advanced**.
+Нажмите **Add Environment Variable** и добавьте токен вашего телеграм-бота:
+- **Key:** `TELEGRAM_BOT_TOKEN`
+- **Value:** `1234567890:AAaBbBcCcDdDeEeFfFgGhHiIjJkKlLmMnNo` (Ваш настоящий токен)
 
-1. **Create Web Service** → подключите GitHub репозиторий
-2. **Build Command:** `pip install -r requirements.txt`
-3. **Start Command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
-4. **Add PostgreSQL** (Free) — `DATABASE_URL` добавится автоматически
-5. **Environment Variables:**
-   - `TELEGRAM_BOT_TOKEN` — токен от @BotFather
+### Шаг 5: Запуск
+Нажмите кнопку **Create Web Service** в самом низу.
+Render начнет собирать и запускать ваш код. Как только появится статус `In progress...` сменится на `Live`, можете открывать Telegram и проверять вашего бота — он уже будет работать 24/7 в облаке!
 
-## Технологии
+> **Важно про БД на бесплатном тарифе Render:** 
+> Render очищает файлы на диске (Free Tier) при каждом перезапуске (Deploy/Спящий режим). Поэтому SQLite база данных `fitness_tracker.db` будет обнуляться каждый раз.
+> Для постоянного хранения данных на Render необходимо подключить `Render Disk` (платная функция) либо переделать код на использование **PostgreSQL** базы данных (ее тоже можно создать бесплатно на Render).
 
-- Python 3.12
-- FastAPI + Uvicorn
-- python-telegram-bot 21.0
-- PostgreSQL (asyncpg)
+---
+
+## 🖥 Локальный запуск (Установка на свой компьютер)
+
+Если нет `pip`, установите `Python` с официального сайта: python.org.
+
+1. Откройте терминал/командную строку.
+2. Создайте виртуальное окружение: `python3 -m venv venv` 
+3. Активируйте:
+   - macOS/Linux: `source venv/bin/activate`
+   - Windows: `venv\Scripts\activate`
+4. Установите библиотеки: `pip install -r requirements.txt`
+5. Выполните:
+   - macOS/Linux: `export TELEGRAM_BOT_TOKEN="Ваш_Токен" && python main.py`
+   - Windows: `set TELEGRAM_BOT_TOKEN="Ваш_Токен" && python main.py`
