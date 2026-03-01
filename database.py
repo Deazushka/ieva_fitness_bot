@@ -74,9 +74,6 @@ async def create_tables():
             categories = [
                 (1, None, "День ног"),
                 (2, None, "День рук"),
-                (3, None, "День спины"),
-                (4, None, "День груди"),
-                (5, None, "Свободная тренировка"),
             ]
             await db.executemany(
                 "INSERT INTO categories (id, user_id, name) VALUES (?, ?, ?)",
@@ -84,22 +81,28 @@ async def create_tables():
             )
 
             exercises = [
-                (None, 1, None, "Приседания"),
+                # День ног
+                (None, 1, None, "Румынская тяга"),
+                (None, 1, None, "Ягодичный мост"),
                 (None, 1, None, "Жим ногами"),
-                (None, 1, None, "Мертвая тяга"),
-                (None, 1, None, "Выпады"),
-                (None, 2, None, "Подъем штанги на бицепс"),
-                (None, 2, None, "Жим узким хватом"),
-                (None, 2, None, "Французский жим"),
-                (None, 2, None, "Молотки"),
-                (None, 3, None, "Становая тяга"),
-                (None, 3, None, "Подтягивания"),
-                (None, 3, None, "Тяга штанги в наклоне"),
-                (None, 3, None, "Тяга верхнего блока"),
-                (None, 4, None, "Жим лежа"),
-                (None, 4, None, "Жим гантелей под углом"),
-                (None, 4, None, "Отжимания на брусьях"),
-                (None, 4, None, "Сведение рук в тренажере"),
+                (None, 1, None, "Разведение ног"),
+                (None, 1, None, "Сведение ног"),
+                (None, 1, None, "Приседание плие"),
+                (None, 1, None, "Сгибание лежа"),
+                (None, 1, None, "Сгибание сидя"),
+                # День рук
+                (None, 2, None, "Отжимания в смите"),
+                (None, 2, None, "Тяга в кроссовере"),
+                (None, 2, None, "Суперсет"),
+                (None, 2, None, "Хаммер"),
+                (None, 2, None, "Плечи"),
+                (None, 2, None, "Бицепс"),
+                (None, 2, None, "Трицепс"),
+                (None, 2, None, "Тяга верхнего блока"),
+                (None, 2, None, "Жим на наклонной скамье"),
+                (None, 2, None, "Подъемы гантелей"),
+                (None, 2, None, "Подъемы блина"),
+                (None, 2, None, "Скручивание на пресс"),
             ]
             await db.executemany(
                 "INSERT INTO exercises (id, category_id, user_id, name) VALUES (?, ?, ?, ?)",
