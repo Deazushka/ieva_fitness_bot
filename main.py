@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+from aiohttp import web
 from telegram.ext import Application
 from config import TELEGRAM_BOT_TOKEN
 from database import create_tables
@@ -18,15 +20,33 @@ async def init_db():
     logger.info("База данных инициализирована.")
 
 
-def main():
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("Токен бота не задан. Установите переменную окружения TELEGRAM_BOT_TOKEN.")
-        return
+async def health_handler(request):
+    return web.Response(text="OK")
 
-    # Создаём event loop явно и оставляем его открытым (asyncio.run() закрывает loop после выполнения)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(init_db())
+
+async def run_http_server(port: int):
+    """Минимальный HTTP сервер для удовлетворения требования Render по открытому порту."""
+    app = web.Application()
+    app.router.add_get("/", health_handler)
+    app.router.add_get("/health", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Health-check HTTP сервер запущен на порту {port}")
+
+
+async def run_bot(application):
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    logger.info("Бот запущен. Ожидание сообщений...")
+    # Ждём вечно — бот работает в фоне
+    await asyncio.Event().wait()
+
+
+async def main_async():
+    await init_db()
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -43,9 +63,26 @@ def main():
 
     application.add_handler(MessageHandler(filters.Regex("^⚙️ Настройки$"), settings_dummy))
 
-    logger.info("Бот запущен. Ожидание сообщений...")
-    # run_polling() использует открытый event loop через asyncio.get_event_loop()
-    application.run_polling()
+    PORT = int(os.environ.get("PORT", "8080"))
+
+    # Запускаем HTTP сервер и бота параллельно
+    await asyncio.gather(
+        run_http_server(PORT),
+        run_bot(application),
+    )
+
+
+def main():
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("Токен бота не задан. Установите переменную окружения TELEGRAM_BOT_TOKEN.")
+        return
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main_async())
+    finally:
+        loop.close()
 
 
 if __name__ == '__main__':
