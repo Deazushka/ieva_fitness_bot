@@ -1,5 +1,5 @@
 import re
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -18,13 +18,18 @@ from database import (
     get_or_create_user, get_categories, start_workout,
     get_active_workout, get_exercises, get_category_by_id,
     discard_active_workout, get_exercise_by_id, get_user_presets,
-    save_set, finish_workout, get_workout_stats
+    save_set, finish_workout, get_workout_stats,
+    add_category, delete_category, add_exercise, delete_exercise
 )
 
 # Состояния FSM
 CATEGORY_SELECT = 1
 EXERCISE_SELECT = 2
 EXERCISE_DETAIL = 3
+ADD_CATEGORY = 4
+DELETE_CATEGORY = 5
+ADD_EXERCISE = 6
+DELETE_EXERCISE = 7
 
 async def start_workout_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -48,9 +53,22 @@ async def category_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Отменено.", reply_markup=get_main_menu())
         return ConversationHandler.END
         
-    if text in ["➕ Добавить категорию", "🗑️ Удалить категорию"]:
-        await update.message.reply_text("Функция пока в разработке.")
-        return CATEGORY_SELECT
+    if text == "➕ Добавить категорию":
+        kb = ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        await update.message.reply_text("Введите название новой категории:", reply_markup=kb)
+        return ADD_CATEGORY
+        
+    if text == "🗑️ Удалить категорию":
+        categories = await get_categories(db_user_id)
+        custom_cats = [c for c in categories if c['user_id'] is not None]
+        if not custom_cats:
+            await update.message.reply_text("У вас нет созданных категорий для удаления.")
+            return CATEGORY_SELECT
+            
+        kb = [[c['name']] for c in custom_cats]
+        kb.append(["🔙 Отмена"])
+        await update.message.reply_text("Выберите категорию для удаления:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+        return DELETE_CATEGORY
 
     categories = await get_categories(db_user_id)
     selected_cat = next((c for c in categories if c['name'] == text), None)
@@ -176,9 +194,73 @@ async def exercise_management_reply(update: Update, context: ContextTypes.DEFAUL
          context.user_data.pop('workout_id', None)
          return ConversationHandler.END
          
-    if text in ["➕ Добавить упражнение", "🗑️ Удалить упражнение"]:
-        await update.message.reply_text("Функция пока в разработке.")
-        return EXERCISE_SELECT
+    if text == "➕ Добавить упражнение":
+        kb = ReplyKeyboardMarkup([["🔙 Отмена"]], resize_keyboard=True)
+        await update.message.reply_text("Введите название нового упражнения:", reply_markup=kb)
+        return ADD_EXERCISE
+        
+    if text == "🗑️ Удалить упражнение":
+        cat_id = context.user_data['category_id']
+        exercises = await get_exercises(cat_id, db_user_id)
+        custom_exs = [e for e in exercises if e['user_id'] is not None]
+        if not custom_exs:
+             await update.message.reply_text("В этой категории нет ваших упражнений для удаления.")
+             return EXERCISE_SELECT
+             
+        kb = [[e['name']] for e in custom_exs]
+        kb.append(["🔙 Отмена"])
+        await update.message.reply_text("Выберите упражнение для удаления:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+        return DELETE_EXERCISE
+
+async def handle_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    db_user_id = context.user_data.get('db_user_id')
+    
+    if text != "🔙 Отмена":
+        await add_category(db_user_id, text)
+        await update.message.reply_text(f"✅ Категория '{text}' добавлена.")
+        
+    categories = await get_categories(db_user_id)
+    await update.message.reply_text("📋 Выберите категорию тренировки:", reply_markup=get_categories_keyboard(categories))
+    return CATEGORY_SELECT
+
+async def handle_delete_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    db_user_id = context.user_data.get('db_user_id')
+    
+    if text != "🔙 Отмена":
+         await delete_category(db_user_id, text)
+         await update.message.reply_text(f"✅ Категория '{text}' удалена.")
+         
+    categories = await get_categories(db_user_id)
+    await update.message.reply_text("📋 Выберите категорию тренировки:", reply_markup=get_categories_keyboard(categories))
+    return CATEGORY_SELECT
+
+async def handle_add_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    db_user_id = context.user_data.get('db_user_id')
+    cat_id = context.user_data.get('category_id')
+    cat = await get_category_by_id(cat_id)
+    
+    if text != "🔙 Отмена":
+        await add_exercise(cat_id, db_user_id, text)
+        await update.message.reply_text(f"✅ Упражнение '{text}' добавлено.")
+        
+    await show_exercises(update, context, cat['name'], page=1)
+    return EXERCISE_SELECT
+
+async def handle_delete_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    db_user_id = context.user_data.get('db_user_id')
+    cat_id = context.user_data.get('category_id')
+    cat = await get_category_by_id(cat_id)
+    
+    if text != "🔙 Отмена":
+        await delete_exercise(cat_id, db_user_id, text)
+        await update.message.reply_text(f"✅ Упражнение '{text}' удалено.")
+        
+    await show_exercises(update, context, cat['name'], page=1)
+    return EXERCISE_SELECT
 
 async def save_set_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -220,10 +302,14 @@ def setup_workout_handlers(application):
         entry_points=[MessageHandler(filters.Regex("^🏋️ Начать тренировку$"), start_workout_cmd)],
         states={
             CATEGORY_SELECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, category_selected)],
+            ADD_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_add_category)],
+            DELETE_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_category)],
             EXERCISE_SELECT: [
                 CallbackQueryHandler(exercise_inline_callback, pattern="^ex_sel_"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, exercise_management_reply)
             ],
+            ADD_EXERCISE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_add_exercise)],
+            DELETE_EXERCISE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_exercise)],
             EXERCISE_DETAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_set_handler)]
         },
         fallbacks=[MessageHandler(filters.Regex("^🔙 Назад$"), category_selected)],

@@ -143,6 +143,20 @@ async def get_categories(user_id: int = None):
         async with db.execute(query, params) as cursor:
             return await cursor.fetchall()
 
+async def add_category(user_id: int, name: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO categories (user_id, name) VALUES (?, ?)", (user_id, name)
+        )
+        await db.commit()
+
+async def delete_category(user_id: int, name: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM categories WHERE user_id = ? AND name = ?", (user_id, name)
+        )
+        await db.commit()
+
 
 async def get_category_by_id(cat_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -165,6 +179,22 @@ async def get_exercises(category_id: int, user_id: int = None):
             query += ")"
         async with db.execute(query, params) as cursor:
             return await cursor.fetchall()
+
+async def add_exercise(category_id: int, user_id: int, name: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO exercises (category_id, user_id, name) VALUES (?, ?, ?)",
+            (category_id, user_id, name)
+        )
+        await db.commit()
+
+async def delete_exercise(category_id: int, user_id: int, name: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM exercises WHERE category_id = ? AND user_id = ? AND name = ?",
+            (category_id, user_id, name)
+        )
+        await db.commit()
 
 
 async def get_exercise_by_id(ex_id: int):
@@ -225,6 +255,7 @@ async def save_set(
             (workout_id, exercise_id, reps, weight, now),
         )
 
+        preset_weight = weight if weight is not None else 0.0
         # Обновляем/создаем пресет
         await db.execute(
             """
@@ -233,7 +264,7 @@ async def save_set(
             ON CONFLICT(user_id, exercise_id, reps, weight) 
             DO UPDATE SET last_used_at=excluded.last_used_at
         """,
-            (user_id, exercise_id, reps, weight, now),
+            (user_id, exercise_id, reps, preset_weight, now),
         )
 
         await db.commit()
