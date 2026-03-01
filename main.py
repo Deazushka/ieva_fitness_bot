@@ -43,8 +43,23 @@ def main():
          
     application.add_handler(MessageHandler(filters.Regex("^⚙️ Настройки$"), settings_dummy))
 
-    logger.info("Бот запущен. Ожидание сообщений...")
-    application.run_polling()
+    logger.info("Бот готов к запуску...")
+    
+    import os
+    PORT = int(os.environ.get("PORT", "8443"))
+    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+
+    if RENDER_EXTERNAL_URL:
+        logger.info(f"Запуск Webhook на порту {PORT}, URL: {RENDER_EXTERNAL_URL}")
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            secret_token=os.environ.get("WEBHOOK_SECRET", "A-Secret-Token-12345"),
+            webhook_url=f"{RENDER_EXTERNAL_URL}/webhook"
+        )
+    else:
+        logger.info("Запуск Polling (локальный режим)...")
+        application.run_polling()
 
 if __name__ == '__main__':
     main()
