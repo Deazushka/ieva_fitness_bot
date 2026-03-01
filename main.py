@@ -22,9 +22,8 @@ def main():
         logger.error("Токен бота не задан. Установите переменную окружения TELEGRAM_BOT_TOKEN.")
         return
 
-    # Инициализация БД (асинхронно, перед запуском пулинга)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(init_db())
+    # Инициализация БД (асинхронно, перед запуском пулинга/вебхука)
+    asyncio.run(init_db())
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
