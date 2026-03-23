@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import aiohttp
 from aiohttp import web
 from telegram.ext import Application
 from config import TELEGRAM_BOT_TOKEN
@@ -36,6 +37,24 @@ async def run_http_server(port: int):
     logger.info(f"Health-check HTTP сервер запущен на порту {port}")
 
 
+async def ping_itself():
+    """Фоновая задача для предотвращения засыпания бота на Koyeb/Render."""
+    url = os.environ.get("APP_URL")
+    if not url:
+        logger.info("Переменная окружения APP_URL не задана. Self-ping отключен.")
+        return
+    
+    logger.info(f"Self-ping включен для URL: {url}")
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    logger.info(f"Self-ping {url}: {response.status}")
+        except Exception as e:
+            logger.error(f"Ошибка self-ping: {e}")
+        await asyncio.sleep(5 * 60) # 5 минут
+
+
 async def run_bot(application):
     await application.initialize()
     await application.start()
@@ -65,10 +84,11 @@ async def main_async():
 
     PORT = int(os.environ.get("PORT", "8080"))
 
-    # Запускаем HTTP сервер и бота параллельно
+    # Запускаем HTTP сервер, бота и self-ping параллельно
     await asyncio.gather(
         run_http_server(PORT),
         run_bot(application),
+        ping_itself(),
     )
 
 
